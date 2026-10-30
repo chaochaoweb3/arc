@@ -1,0 +1,306 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 2c7e7e1..898dbc9 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -10,10 +10,11 @@ This is the **project memory** - what Arc Studio remembers about building this a
+ 
+ AgentVault is a controlled USDC vault for an AI agent (DoraHacks Arc Microgrants entry). The owner funds it, sets per-payment and daily limits and a recipient whitelist. The single agent address can only call `requestPayment`: payments within every rule pay instantly, others queue for owner approve/reject (once each). The agent has no withdraw, limit, whitelist, agent-change or self-approve path.
+ 
+-### Deployment (Arc Testnet only, never mainnet)
++### Deployment (Arc Mainnet)
+ 
+-- AgentVault (current): `0xed16d9015ab2677e175ceb3d40181ca0594a18d2` (deploy block 69782983, tx `0x2d72000715bef345fb5ef3ef96f7a3beb9ca2ed335d8423ff8dbb5816d6535ee`). Source is the user-supplied version-aligned `contracts/AgentVault.sol`; do not rewrite it.
+-- Previous deployment (kept, unused by the app): `0xf8edb917142a60d4cf244c5b2f4669b7a6981eaa`
++- AgentVault (current): `0xb0D295774FD38b9473d316E7e06C61EC02439C22` (Arc Mainnet, deploy block 28593561). Source is the user-supplied version-aligned `contracts/AgentVault.sol`; do not rewrite it.
++- Historical Arc Testnet deployment (kept, unused by the app): `0xed16d9015ab2677e175ceb3d40181ca0594a18d2` (deploy block 69782983, tx `0x2d72000715bef345fb5ef3ef96f7a3beb9ca2ed335d8423ff8dbb5816d6535ee`).
++- Previous historical deployment (kept, unused by the app): `0xf8edb917142a60d4cf244c5b2f4669b7a6981eaa`
+ - Owner: `0x0E78FACFb5B36FFe41898C53b2B9Ffd0CE107873`; agent starts unset; per-tx limit 0.20 USDC, daily 0.50 USDC (raw 200000 / 500000).
+ - Address and deploy block live in `src/deployment.ts`; ABI in `src/abi.ts` (regenerate from `contracts/out` after contract edits).
+ - Design decisions: owner approvals do not consume the agent's daily limit; fixed UTC-day window; queue capped at 50; immutable (no proxy).
+@@ -25,8 +26,9 @@ AgentVault is a controlled USDC vault for an AI agent (DoraHacks Arc Microgrants
+ - Web3: wagmi v2, viem v2, ConnectKit
+ - Contracts: Solidity 0.8.28 + Foundry. Sources in `contracts/`, unit tests in `contracts/test/*.t.sol`. Build with `bun run contracts:build` (`forge build`), test with `bun run contracts:test` (`forge test`).
+ - Wallet: injected (MetaMask, etc.)
+-- Chain: Arc Testnet (Chain ID: 5042002, imported from `viem/chains`)
+-- Token: USDC (6 decimals) (Address: 0x3600000000000000000000000000000000000000, Chain: Arc Testnet)
++- Chain: Arc Mainnet (Chain ID: 5042, defined from the Arc Mainnet entry in `src/onchain-facts.ts`)
++- Arc Mainnet RPC: `https://rpc.mainnet.arc.io`; explorer: `https://explorer.arc.io`
++- Token: USDC (6 decimals) (Address: 0x3600000000000000000000000000000000000000, Chain: Arc Mainnet; native USDC gas token uses 18 decimals)
+ - Toasts: Sonner
+ 
+ ## Key Files
+diff --git a/README.md b/README.md
+index c40f256..37e0357 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # AgentVault
+ 
+-A controlled USDC vault for an AI agent on Arc Testnet. The owner funds the vault, sets spending limits and a recipient whitelist, and approves anything unusual. The agent can only ask to pay: small whitelisted payments go through instantly, everything else waits for the owner.
++A controlled USDC vault for an AI agent on Arc Mainnet. The owner funds the vault, sets spending limits and a recipient whitelist, and approves anything unusual. The agent can only ask to pay: small whitelisted payments go through instantly, everything else waits for the owner.
+ 
+ Built with [Arc Studio](https://studio.arc.io)
+ 
+@@ -28,4 +28,4 @@ bun run check          # lint and typecheck
+ 
+ Environment variables: None.
+ 
+-The deployed vault address is set in `src/deployment.ts`. Use a wallet with Arc Testnet USDC to try the owner flow.
++The deployed vault address is set in `src/deployment.ts`. Use a wallet with Arc Mainnet USDC to try the owner flow.
+diff --git a/src/App.tsx b/src/App.tsx
+index c2df00d..4df7de0 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -135,11 +135,11 @@ function Body() {
+       </Card>
+     )
+   }
+-  if (snapshot.isLoading) return <Card>Reading the vault from Arc Testnet…</Card>
++  if (snapshot.isLoading) return <Card>Reading the vault from Arc Mainnet…</Card>
+   if (snapshot.isError || !snapshot.data) {
+     return (
+       <Card title="Could not read the vault">
+-        <p className="text-sm text-[#9b2c24]">Check your connection to Arc Testnet and try again.</p>
++        <p className="text-sm text-[#9b2c24]">Check your connection to Arc Mainnet and try again.</p>
+       </Card>
+     )
+   }
+@@ -161,7 +161,7 @@ export default function App() {
+             </div>
+           </div>
+           <div className="flex items-center gap-2">
+-            <Badge tone="blue">Arc Testnet</Badge>
++            <Badge tone="blue">Arc Mainnet</Badge>
+             <ConnectKitButton />
+           </div>
+         </header>
+diff --git a/src/components/ActivityFeed.tsx b/src/components/ActivityFeed.tsx
+index c776eea..7e8ade4 100644
+--- a/src/components/ActivityFeed.tsx
++++ b/src/components/ActivityFeed.tsx
+@@ -31,7 +31,7 @@ function describe(e: VaultEvent): { tone: 'green' | 'amber' | 'red' | 'blue' | '
+ export function ActivityFeed({ events }: { events: VaultEvent[] | undefined }) {
+   const recent = [...(events ?? [])].reverse().slice(0, 14)
+   return (
+-    <Card title="Onchain activity" hint="Read straight from the vault's event log on Arc Testnet.">
++    <Card title="Onchain activity" hint="Read straight from the vault's event log on Arc Mainnet.">
+       <ul className="flex flex-col gap-2">
+         {recent.length === 0 && <li className="text-sm text-[#7a889f]">No activity yet.</li>}
+         {recent.map((e) => {
+diff --git a/src/components/AdminPanels.tsx b/src/components/AdminPanels.tsx
+index 5256eff..2e412e1 100644
+--- a/src/components/AdminPanels.tsx
++++ b/src/components/AdminPanels.tsx
+@@ -116,7 +116,7 @@ export function AgentSettingsPanel({ snap, run, busy, canAct }: OwnerProps) {
+             </Button>
+           </div>
+           <p className="mt-1 text-xs text-[#5b6b86]">
+-            The demo agent is a throwaway testnet key stored in this browser. Arc pays gas in USDC, so it needs a little to sign.
++            The demo agent is a throwaway browser key stored in this browser. Arc pays gas in USDC, so it needs a little to sign.
+           </p>
+         </div>
+       </div>
+diff --git a/src/components/AgentPanel.tsx b/src/components/AgentPanel.tsx
+index a758777..f63e2fc 100644
+--- a/src/components/AgentPanel.tsx
++++ b/src/components/AgentPanel.tsx
+@@ -100,7 +100,7 @@ export function AgentPanel({ snap }: { snap: VaultSnapshot }) {
+           </div>
+         </dl>
+         <p className="mt-3 text-xs text-[#7a889f]">
+-          A throwaway testnet key stored in this browser. A real agent would hold its own key and call the same one function.
++          A throwaway browser key stored in this browser. A real agent would hold its own key and call the same one function.
+         </p>
+       </Card>
+     </div>
+diff --git a/src/components/BreakPanel.tsx b/src/components/BreakPanel.tsx
+index 026ed4d..40815e5 100644
+--- a/src/components/BreakPanel.tsx
++++ b/src/components/BreakPanel.tsx
+@@ -122,7 +122,7 @@ export function BreakPanel({ snap }: { snap: VaultSnapshot }) {
+     <div className="flex flex-col gap-4">
+       <Card
+         title="Try to break it"
+-        hint="Three attacks, signed by the agent key against the live contract on Arc Testnet. Every result below is a real transaction or a real onchain rejection."
++        hint="Three attacks, signed by the agent key against the live contract on Arc Mainnet. Every result below is a real transaction or a real onchain rejection."
+         action={
+           <Button disabled={locked} loading={running === 'all'} onClick={runAll}>
+             <Play className="size-4" /> Run all three
+diff --git a/src/config.ts b/src/config.ts
+index 3d942cb..3d12b81 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -5,18 +5,18 @@
+ 
+ import { http, createConfig } from 'wagmi'
+ import { mainnet } from 'wagmi/chains'
+-import { arcTestnet } from 'viem/chains'
+ import { injected } from 'wagmi/connectors'
+ import { registerChain } from './tracing'
++import { arcMainnet } from './lib/chain'
+ 
+ // Pre-register chain RPC URLs so trace events show correct chain names immediately
+-registerChain(arcTestnet.id, arcTestnet.rpcUrls.default.http[0])
++registerChain(arcMainnet.id, arcMainnet.rpcUrls.default.http[0])
+ 
+ export const config = createConfig({
+-  chains: [arcTestnet, mainnet], // mainnet needed for ENS resolution
++  chains: [arcMainnet, mainnet], // Ethereum mainnet is needed for ENS resolution
+   connectors: [injected()],
+   transports: {
+-    [arcTestnet.id]: http(),
++    [arcMainnet.id]: http(arcMainnet.rpcUrls.default.http[0]),
+     [mainnet.id]: http(), // ENS resolution uses mainnet
+   },
+ })
+diff --git a/src/deployment.ts b/src/deployment.ts
+index a231c3d..2d3497a 100644
+--- a/src/deployment.ts
++++ b/src/deployment.ts
+@@ -1,9 +1,9 @@
+ import type { Address } from 'viem'
+ 
+ /**
+- * Deployed AgentVault on Arc Testnet. 
++ * Deployed AgentVault on Arc Mainnet.
+  */
+-export const VAULT_ADDRESS: Address | null = '0xed16d9015ab2677e175ceb3d40181ca0594a18d2'
++export const VAULT_ADDRESS: Address | null = '0xb0D295774FD38b9473d316E7e06C61EC02439C22'
+ 
+ /** Block the vault was deployed at, used as the start of event queries. */
+-export const VAULT_DEPLOY_BLOCK = 69782983n
++export const VAULT_DEPLOY_BLOCK = 28593561n
+diff --git a/src/hooks/useVault.ts b/src/hooks/useVault.ts
+index 6dfc6e3..d2e3ebd 100644
+--- a/src/hooks/useVault.ts
++++ b/src/hooks/useVault.ts
+@@ -107,12 +107,20 @@ export interface VaultEvent {
+ }
+ 
+ async function fetchEvents(vault: Address): Promise<VaultEvent[]> {
+-  const logs = await publicClient.getContractEvents({
+-    address: vault,
+-    abi: agentVaultAbi,
+-    fromBlock: VAULT_DEPLOY_BLOCK,
+-    toBlock: 'latest',
+-  })
++  const latest = await publicClient.getBlockNumber()
++  const logs = []
++  let start = VAULT_DEPLOY_BLOCK
++  while (start <= latest) {
++    const end = start + 9999n <= latest ? start + 9999n : latest
++    const chunk = await publicClient.getContractEvents({
++      address: vault,
++      abi: agentVaultAbi,
++      fromBlock: start,
++      toBlock: end,
++    })
++    logs.push(...chunk)
++    start = end + 1n
++  }
+   const out: VaultEvent[] = []
+   for (const log of logs) {
+     const common = {
+diff --git a/src/lib/agent.ts b/src/lib/agent.ts
+index 199041f..9c1d555 100644
+--- a/src/lib/agent.ts
++++ b/src/lib/agent.ts
+@@ -3,9 +3,9 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+ import { chain, RPC_URL } from './chain'
+ 
+ /**
+- * Demo-only agent identity. A throwaway Arc Testnet key lives in this browser's
++ * Demo-only agent identity. A throwaway browser key lives in this browser's
+  * localStorage so the review panel can sign real agent transactions without a
+- * second wallet. It must never hold more than test funds.
++ * second wallet. It must never hold more than demo funds.
+  */
+ const AGENT_KEY = 'agentvault.demo.agentKey'
+ const PAYEE_ADDR = 'agentvault.demo.payee'
+diff --git a/src/lib/chain.ts b/src/lib/chain.ts
+index 5f68d7f..01633b0 100644
+--- a/src/lib/chain.ts
++++ b/src/lib/chain.ts
+@@ -1,20 +1,30 @@
+-import { createPublicClient, http, type Address } from 'viem'
+-import { arcTestnet } from 'viem/chains'
++import { createPublicClient, defineChain, http, type Address } from 'viem'
+ import { getUsdc, requireChain, buildTxExplorerUrl, buildAddressExplorerUrl } from '@/onchain-facts'
+ 
+-export const CHAIN_ID = arcTestnet.id
++export const CHAIN_ID = 5042
+ 
+ const chainFacts = requireChain(CHAIN_ID)
+ export const RPC_URL = chainFacts.rpcUrls[0]
+ 
+ const usdcFact = getUsdc(CHAIN_ID)
+-if (!usdcFact) throw new Error('USDC is not registered for Arc Testnet')
++if (!usdcFact) throw new Error('USDC is not registered for Arc Mainnet')
+ export const USDC_ADDRESS = usdcFact.address as Address
+ 
+-export const chain = {
+-  ...arcTestnet,
++export const arcMainnet = defineChain({
++  id: CHAIN_ID,
++  name: chainFacts.name,
++  nativeCurrency: {
++    name: chainFacts.nativeCurrency.symbol,
++    symbol: chainFacts.nativeCurrency.symbol,
++    decimals: chainFacts.nativeCurrency.decimals,
++  },
+   rpcUrls: { default: { http: [RPC_URL] } },
+-} as const
++  blockExplorers: {
++    default: { name: 'Arc Explorer', url: chainFacts.explorerBase },
++  },
++})
++
++export const chain = arcMainnet
+ 
+ export const publicClient = createPublicClient({ chain, transport: http(RPC_URL) })
+ 
+diff --git a/src/onchain-facts.ts b/src/onchain-facts.ts
+index fa748e4..509b538 100644
+--- a/src/onchain-facts.ts
++++ b/src/onchain-facts.ts
+@@ -58,28 +58,6 @@ interface OnchainFacts {
+ 
+ const FACTS: OnchainFacts = {
+   "chains": [
+-    {
+-      "chainId": 5042002,
+-      "name": "Arc Testnet",
+-      "isTestnet": true,
+-      "family": "arc",
+-      "explorerBase": "https://explorer.testnet.arc.io",
+-      "rpcUrls": [
+-        "https://rpc.testnet.arc.io"
+-      ],
+-      "nativeCurrency": {
+-        "symbol": "USDC",
+-        "decimals": 18,
+-        "isUsdc": true
+-      },
+-      "usdc": {
+-        "symbol": "USDC",
+-        "address": "0x3600000000000000000000000000000000000000",
+-        "decimals": 6
+-      },
+-      "cctpDomain": 26,
+-      "scpBlockchain": "ARC-TESTNET"
+-    },
+     {
+       "chainId": 5042,
+       "name": "Arc",
+diff --git a/vite.config.ts b/vite.config.ts
+index d4f3a98..0bf48b6 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -4,6 +4,7 @@ import path from 'path'
+ import { nodePolyfills } from 'vite-plugin-node-polyfills'
+ 
+ export default defineConfig({
++  base: '/agentvault/app/',
+   plugins: [react(), nodePolyfills()],
+   resolve: {
+     alias: {
