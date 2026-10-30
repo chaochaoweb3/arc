@@ -18,6 +18,17 @@ from the deploy block).
 Apply it to a clean checkout with `git apply live-app-mainnet.patch`,
 then `bun install --frozen-lockfile && bun run build`.
 
+A second patch, `live-app-fix2.patch`, is applied on top of the hosted
+build. Arc's docs list exactly one keyless public mainnet RPC
+(`https://rpc.mainnet.arc.io`), so there is no second endpoint to fail
+over to; the patch instead bounds every read: the viem transport gets an
+explicit 8s timeout with limited retries, the vault snapshot query gets
+a 20s overall deadline and a single react-query retry, the error card
+gains a working Retry button, a slow-loading hint appears after 10s,
+and a connected wallet on the wrong chain gets a visible banner. All
+reads stay on the public RPC client, fully decoupled from the wallet.
+Apply with `git apply live-app-fix2.patch` after the mainnet patch.
+
 Following the official round-2 flow, the contract and app were built in
 Arc Studio; the mainnet deployment and this hosting were done outside
 Studio from the exported code.

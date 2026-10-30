@@ -1,0 +1,142 @@
+--- a/src/lib/chain.ts
++++ b/src/lib/chain.ts
+@@ -26,7 +26,7 @@
+ 
+ export const chain = arcMainnet
+ 
+-export const publicClient = createPublicClient({ chain, transport: http(RPC_URL) })
++export const publicClient = createPublicClient({ chain, transport: http(RPC_URL, { timeout: 8_000, retryCount: 2, retryDelay: 400 }) })
+ 
+ export const txUrl = (hash: string) => buildTxExplorerUrl(CHAIN_ID, hash)
+ export const addressUrl = (address: string) => buildAddressExplorerUrl(CHAIN_ID, address)
+--- a/src/hooks/useVault.ts
++++ b/src/hooks/useVault.ts
+@@ -4,6 +4,22 @@
+ import { publicClient } from '@/lib/chain'
+ import { VAULT_ADDRESS, VAULT_DEPLOY_BLOCK } from '@/deployment'
+ 
++function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
++  return new Promise<T>((resolve, reject) => {
++    const timer = setTimeout(() => reject(new Error('Vault read timed out')), ms)
++    p.then(
++      (value) => {
++        clearTimeout(timer)
++        resolve(value)
++      },
++      (error) => {
++        clearTimeout(timer)
++        reject(error)
++      },
++    )
++  })
++}
++
+ export const REQUEST_PENDING = 1
+ export const REQUEST_APPROVED = 2
+ export const REQUEST_REJECTED = 3
+@@ -77,9 +93,11 @@
+     queryKey: ['vault', 'snapshot', VAULT_ADDRESS],
+     enabled: VAULT_ADDRESS !== null,
+     refetchInterval: 4000,
++    retry: 1,
++    retryDelay: 1_000,
+     queryFn: () => {
+       if (!VAULT_ADDRESS) throw new Error('Vault not deployed')
+-      return fetchSnapshot(VAULT_ADDRESS)
++      return withDeadline(fetchSnapshot(VAULT_ADDRESS), 20_000)
+     },
+   })
+ }
+@@ -175,6 +193,7 @@
+     queryKey: ['vault', 'events', VAULT_ADDRESS],
+     enabled: VAULT_ADDRESS !== null,
+     refetchInterval: 6000,
++    retry: 1,
+     queryFn: () => {
+       if (!VAULT_ADDRESS) throw new Error('Vault not deployed')
+       return fetchEvents(VAULT_ADDRESS)
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,4 +1,4 @@
+-import { useState } from 'react'
++import { useEffect, useState } from 'react'
+ import { ConnectKitButton } from 'connectkit'
+ import { useAccount } from 'wagmi'
+ import { Bot, KeyRound, ShieldAlert, Vault } from 'lucide-react'
+@@ -6,8 +6,9 @@
+ import { VAULT_ADDRESS } from '@/deployment'
+ import { useVaultEvents, useVaultSnapshot, type VaultSnapshot } from '@/hooks/useVault'
+ import { useWalletTx } from '@/hooks/useOwnerTx'
++import { CHAIN_ID } from '@/lib/chain'
+ import { usd } from '@/lib/format'
+-import { AddressLink, Badge, Card, TxStatus } from '@/components/ui'
++import { AddressLink, Badge, Button, Card, TxStatus } from '@/components/ui'
+ import { DemoSetup, FundAndLimits } from '@/components/OwnerPanel'
+ import { AgentSettingsPanel, WhitelistPanel } from '@/components/AdminPanels'
+ import { QueuePanel } from '@/components/QueuePanel'
+@@ -69,7 +70,7 @@
+ 
+ function Dashboard({ snap }: { snap: VaultSnapshot }) {
+   const [tab, setTab] = useState<Tab>('owner')
+-  const { address, isConnected } = useAccount()
++  const { address, isConnected, chainId } = useAccount()
+   const events = useVaultEvents()
+   const { state, run, busy } = useWalletTx()
+   const canAct = isConnected && address?.toLowerCase() === snap.owner.toLowerCase()
+@@ -77,6 +78,13 @@
+ 
+   return (
+     <div className="flex flex-col gap-4">
++      {isConnected && chainId !== undefined && chainId !== CHAIN_ID && (
++        <Card className="border-[#8a5a0b]/30 bg-[#faecd0] text-[#8a5a0b]">
++          <p className="text-sm">
++            Wallet is on the wrong network — switch to Arc Mainnet (chain ID 5042) to transact. The vault data below is read live from the public RPC.
++          </p>
++        </Card>
++      )}
+       <Hero snap={snap} />
+       <nav className="flex gap-1 rounded-3xl bg-white/60 p-1.5" aria-label="Sections">
+         {TABS.map(({ id, label, icon: Icon }) => (
+@@ -128,6 +136,15 @@
+ 
+ function Body() {
+   const snapshot = useVaultSnapshot()
++  const [elapsed, setElapsed] = useState(0)
++
++  useEffect(() => {
++    setElapsed(0)
++    if (!snapshot.isLoading) return
++    const timer = setInterval(() => setElapsed((seconds) => seconds + 1), 1_000)
++    return () => clearInterval(timer)
++  }, [snapshot.isLoading])
++
+   if (!VAULT_ADDRESS) {
+     return (
+       <Card title="Vault not deployed yet">
+@@ -135,11 +152,25 @@
+       </Card>
+     )
+   }
+-  if (snapshot.isLoading) return <Card>Reading the vault from Arc Mainnet…</Card>
++  if (snapshot.isLoading) {
++    return (
++      <Card>
++        <p>Reading the vault from Arc Mainnet…</p>
++        {elapsed >= 10 && (
++          <p className="mt-2 text-sm text-[#5b6b86]">
++            Still waiting on the Arc Mainnet RPC. If this persists, you will get an error screen with a retry option.
++          </p>
++        )}
++      </Card>
++    )
++  }
+   if (snapshot.isError || !snapshot.data) {
+     return (
+       <Card title="Could not read the vault">
+         <p className="text-sm text-[#9b2c24]">Check your connection to Arc Mainnet and try again.</p>
++        <Button className="mt-3" onClick={() => snapshot.refetch()} disabled={snapshot.isFetching}>
++          Retry
++        </Button>
+       </Card>
+     )
+   }
